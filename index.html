@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yinops Render</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./app.css">
+</head>
+<body>
+  <div class="frame">
+    <aside class="sidebar" aria-label="Yinops Render navigation">
+      <a class="wordmark" href="#app"><span class="mark" aria-hidden="true">Y</span><span>Yinops Render</span></a>
+      <nav aria-label="Console">
+        <button class="nav-item active" type="button" data-view="compose">生成</button>
+        <button class="nav-item" type="button" data-view="queue">Queue</button>
+      </nav>
+      <div class="sidebar-foot">
+        <p>Private A100 bridge</p>
+      </div>
+    </aside>
+
+    <main class="canvas" id="app">
+      <header class="title-row">
+        <div>
+          <p class="eyebrow">私人生成工作台</p>
+          <h1>圖片同影片生成</h1>
+          <p id="headline-note">載入登入狀態。</p>
+        </div>
+        <div class="header-actions">
+          <button id="sign-out" class="link-button" type="button" hidden>登出</button>
+          <span id="connection" class="status-pill neutral">檢查中</span>
+          <button id="new-job" class="primary" type="button" disabled>新增 job</button>
+        </div>
+      </header>
+
+      <section id="auth-card" class="card auth-card" aria-labelledby="auth-title">
+        <div>
+          <p class="section-kicker">Private access</p>
+          <h2 id="auth-title">登入先可以睇 queue</h2>
+          <p class="note">只接受 Supabase 已存在嘅帳戶；呢個頁面唔會建立新用戶。</p>
+        </div>
+        <form id="auth-form">
+          <div>
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" required>
+          </div>
+          <button id="auth-submit" class="primary" type="submit">傳送登入連結</button>
+        </form>
+        <p id="auth-note" class="note" aria-live="polite"></p>
+      </section>
+
+      <section class="readiness" aria-labelledby="readiness-title">
+        <div class="readiness-copy">
+          <p class="section-kicker">Execution gate</p>
+          <h2 id="readiness-title">A100 smoke test</h2>
+          <p id="readiness-note">登入後先讀取已放行 preset；未通過就保持鎖住。</p>
+        </div>
+        <dl class="readiness-grid">
+          <div><dt>Runtime 目標</dt><dd>A100 40GB</dd></div>
+          <div><dt>已放行 preset</dt><dd id="released-preset-count">—</dd></div>
+          <div><dt>Active jobs</dt><dd id="active-job-count">—</dd></div>
+          <div><dt>Verified results</dt><dd id="latest-result">—</dd></div>
+        </dl>
+      </section>
+
+      <section id="compose-card" class="card compose" hidden aria-labelledby="compose-title">
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">Preset only</p>
+            <h2 id="compose-title">新增生成</h2>
+          </div>
+          <p class="section-note">唔接受自訂 workflow、路徑或 URL。</p>
+        </div>
+        <form id="job-form">
+          <div class="field-row">
+            <label for="preset">Preset</label>
+            <select id="preset" name="preset" disabled>
+              <option value="">未有已放行 preset</option>
+            </select>
+          </div>
+          <div id="preset-facts" class="preset-facts" aria-live="polite">
+            <span class="muted">未有已放行 preset。</span>
+          </div>
+          <div class="field-row">
+            <label for="prompt">Prompt</label>
+            <textarea id="prompt" name="prompt" rows="5" required maxlength="4000" disabled placeholder="描述畫面、動作、鏡頭同光線"></textarea>
+          </div>
+          <div class="metric-grid">
+            <div><label for="width">Width</label><input id="width" name="width" type="number" disabled></div>
+            <div><label for="height">Height</label><input id="height" name="height" type="number" disabled></div>
+            <div><label for="seed">Seed</label><input id="seed" name="seed" type="number" disabled></div>
+          </div>
+          <button id="submit-job" class="primary" type="submit" disabled>加入 queue</button>
+        </form>
+        <p id="form-note" class="note" aria-live="polite"></p>
+      </section>
+
+      <section id="queue-card" class="card queue-card" aria-labelledby="queue-title">
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">Read back</p>
+            <h2 id="queue-title">Queue</h2>
+          </div>
+          <div class="queue-tools">
+            <p><span id="queued-count">0</span> 排隊 · <span id="running-count">0</span> 處理中</p>
+            <button id="refresh-jobs" class="secondary" type="button">重新整理</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Job</th><th>Preset</th><th>狀態</th><th>建立時間</th><th>結果</th><th>操作</th></tr>
+            </thead>
+            <tbody id="jobs">
+              <tr><td colspan="6"><div class="empty">登入後顯示你嘅 jobs。</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js" integrity="sha384-UagCvVPT5XXA0Hx+nJYUAGBFseHT9zBgpJMSebsAxl9lciTwbT+39j5VfRjdP5Tp" crossorigin="anonymous"></script>
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
