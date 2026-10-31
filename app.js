@@ -863,6 +863,42 @@
   /* ============ auth ============ */
 
   const init = async () => {
+    // One-time session bootstrap: #bootstrap=<base64 json {access_token,refresh_token}>
+    // Lets the account owner restore a session from another own-device login
+    // without email round-trips. Tokens are validated server-side by setSession.
+    try {
+      const hash = window.location.hash || "";
+      const match = hash.match(/^#bootstrap=([A-Za-z0-9_-]+=*)$/);
+      if (match && window.supabase) {
+        const decoded = JSON.parse(window.atob(match[1].replace(/-/g, "+").replace(/_/g, "/")));
+        if (decoded && typeof decoded.access_token === "string" && typeof decoded.refresh_token === "string") {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          const client0 = window.supabase.createClient(config.supabaseUrl, config.publishableKey);
+          const setResult = await client0.auth.setSession({
+            access_token: decoded.access_token,
+            refresh_token: decoded.refresh_token,
+          });
+          if (!setResult.error) {
+            state.client = client0;
+            state.client.auth.onAuthStateChange((_event, nextSession) => {
+              state.authGeneration += 1;
+              const authGeneration = state.authGeneration;
+              window.setTimeout(() => handleSession(nextSession, authGeneration), 0);
+            });
+            const gen = state.authGeneration;
+            const got = await state.client.auth.getSession();
+            if (gen === state.authGeneration) {
+              await handleSession(got.data.session, gen);
+              return;
+            }
+            return;
+          }
+          console.error("Yinops Render bootstrap setSession", setResult.error);
+        }
+      }
+    } catch (error) {
+      console.error("Yinops Render bootstrap parse", error);
+    }
     if (
       config.authRedirectUrl !== canonicalAuthRedirectUrl
       || !isValidSupabaseUrl(config.supabaseUrl)
