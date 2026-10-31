@@ -14,6 +14,8 @@
     refreshDraft: null,
     enabledPresets: [],
     jobs: [],
+    mode: "image",
+    uploadedAsset: null,
   };
 
   const isValidHttpsUrl = (value) => {
@@ -59,18 +61,20 @@
   const byId = (id) => document.getElementById(id);
   const connection = byId("connection");
   const headlineNote = byId("headline-note");
-  const authCard = byId("auth-card");
-  const composeCard = byId("compose-card");
+  const authView = byId("auth-view");
+  const createView = byId("create-view");
   const authForm = byId("auth-form");
   const authSubmit = byId("auth-submit");
+  const authLinkButton = byId("auth-link");
   const authNote = byId("auth-note");
   const jobForm = byId("job-form");
   const formNote = byId("form-note");
-  const jobsBody = byId("jobs");
+  const jobsGrid = byId("jobs");
   const queuedCount = byId("queued-count");
   const runningCount = byId("running-count");
   const presetSelect = byId("preset");
   const promptInput = byId("prompt");
+  const promptCount = byId("prompt-count");
   const widthInput = byId("width");
   const heightInput = byId("height");
   const seedInput = byId("seed");
@@ -83,6 +87,11 @@
   const activeJobCount = byId("active-job-count");
   const latestResult = byId("latest-result");
   const presetFacts = byId("preset-facts");
+  const uploadZone = byId("upload-zone");
+  const uploadDrop = byId("upload-drop");
+  const uploadInput = byId("upload-input");
+  const uploadPreview = byId("upload-preview");
+  const uploadNote = byId("upload-note");
   const pendingStoragePrefix = "comfy:pending-enqueue:v1";
 
   const clearNode = (node) => {
@@ -109,7 +118,7 @@
 
   const isCurrentReadiness = (context) => Boolean(
     isCurrentSession(context)
-    && context.authGeneration === state.authGeneration
+      && context.authGeneration === state.authGeneration
   );
 
   const pendingStorageKey = (ownerId) => pendingStoragePrefix + ":" + encodeURIComponent(ownerId);
@@ -123,7 +132,7 @@
 
   const setStatus = (text, className) => {
     connection.textContent = text;
-    connection.className = "status-pill " + (className || "neutral");
+    connection.className = "pill pill-" + (className || "neutral");
   };
 
   const setNote = (node, text, failed) => {
@@ -142,6 +151,7 @@
   };
 
   const shortId = (value) => String(value || "").slice(0, 8);
+
   const timeLabel = (value) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
@@ -151,12 +161,6 @@
       hour: "2-digit",
       minute: "2-digit",
     }).format(date);
-  };
-
-  const tableCell = (label, value, className) => {
-    const cell = element("td", className || "", value);
-    cell.dataset.label = label;
-    return cell;
   };
 
   const statusLabel = (status) => {
@@ -195,32 +199,6 @@
     return artifacts.find((artifact) => artifact.verification_state === "verified") || null;
   };
 
-  const appendResult = async (cell, row, artifact, context) => {
-    if (!artifact || !state.client) {
-      cell.append(element("span", "muted", row.status === "succeeded" ? "驗證結果未就緒" : "—"));
-      return;
-    }
-    const result = await state.client.storage.from("comfy-outputs").createSignedUrl(artifact.storage_path, 600);
-    if (!isCurrentReadiness(context)) return;
-    if (result.error || !result.data || !result.data.signedUrl) {
-      safeError("jobs", result.error || new Error("missing signed result URL"));
-      cell.append(element("span", "muted", "結果連結未就緒"));
-      return;
-    }
-    const isVideo = String(artifact.mime_type || "").startsWith("video/");
-    const media = document.createElement(isVideo ? "video" : "img");
-    media.className = "result-media";
-    media.src = result.data.signedUrl;
-    if (isVideo) {
-      media.controls = true;
-      media.preload = "metadata";
-    } else {
-      media.alt = "Job " + shortId(row.id) + " verified result";
-      media.loading = "lazy";
-    }
-    cell.append(media);
-  };
-
   const cancelJob = async (jobId) => {
     if (!state.client || !state.session || !state.readinessAuthorized) return;
     const context = sessionContext();
@@ -234,6 +212,72 @@
     await loadJobs(context);
   };
 
+  const resultMediaFor = async (row, artifact, context) => {
+    if (!artifact || !state.client) return null;
+    const result = await state.client.storage.from("comfy-outputs").createSignedUrl(artifact.storage_path, 600);
+    if (!isCurrentReadiness(context)) return null;
+    if (result.error || !result.data || !result.data.signedUrl) {
+      safeError("jobs", result.error || new Error("missing signed result URL"));
+      return null;
+    }
+    return result.data.signedUrl;
+  };
+
+  const renderJobCard = async (row, context) => {
+    const card = element("article", "job-card");
+
+    const mediaBox = element("div", "job-media");
+    const artifact = verifiedArtifact(row);
+    const signedUrl = artifact ? await resultMediaFor(row, artifact, context) : null;
+    if (!isCurrentReadiness(context)) return null;
+    if (signedUrl) {
+      const isVideo = String(artifact.mime_type || "").startsWith("video/");
+      const media = document.createElement(isVideo ? "video" : "img");
+      if (isVideo) {
+        media.controls = true;
+        media.preload = "metadata";
+      } else {
+        media.alt = "Job " + shortId(row.id) + " verified result";
+        media.loading = "lazy";
+      }
+      media.src = signedUrl;
+      mediaBox.append(media);
+    } else {
+      mediaBox.append(element("div", "placeholder", row.status === "succeeded" ? "驗證結果未就緒" : "結果會喺生成完成後出現"));
+    }
+    const float = element("div", "status-float");
+    float.append(element("span", statusClass(row.status), statusLabel(row.status)));
+    mediaBox.append(float);
+    card.append(mediaBox);
+
+    const body = element("div", "job-body");
+    body.append(element("div", "job-title", row.kind === "video" ? "影片 · " + (row.preset_id || row.model || "—") : "圖片 · " + (row.preset_id || row.model || "—")));
+    body.append(element("div", "job-sub", "job " + shortId(row.id) + " · " + timeLabel(row.created_at)));
+    if (row.prompt) body.append(element("div", "job-prompt", row.prompt));
+
+    const actions = element("div", "job-actions");
+    if (signedUrl) {
+      const download = element("a", "ghost");
+      download.textContent = "下載";
+      download.href = signedUrl;
+      download.target = "_blank";
+      download.rel = "noopener";
+      actions.append(download);
+    }
+    if (["queued", "running", "reconciling", "verifying"].includes(row.status)) {
+      const button = element("button", "ghost", "取消");
+      button.type = "button";
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        cancelJob(row.id);
+      });
+      actions.append(button);
+    }
+    if (actions.firstChild) body.append(actions);
+    card.append(body);
+    return card;
+  };
+
   const renderJobs = async (rows, context) => {
     const fragment = document.createDocumentFragment();
     const queued = rows.filter((row) => row.status === "queued").length;
@@ -241,54 +285,18 @@
     const verifiedCount = rows.filter((row) => Boolean(verifiedArtifact(row))).length;
 
     if (!rows.length) {
-      const tr = element("tr");
-      const td = tableCell("Queue", "", "empty-cell");
-      td.colSpan = 6;
-      td.append(element("div", "empty", "未有 job。只有已放行 preset 先可以落單。"));
-      tr.append(td);
-      fragment.append(tr);
+      const empty = element("div", "empty", "未有作品。只有已放行 preset 先可以落單。");
+      fragment.append(empty);
     }
 
-    for (const row of rows.slice(0, 20)) {
-      const tr = element("tr");
-      tr.append(tableCell("Job", shortId(row.id), "id"));
-
-      const mediaCell = tableCell("Preset", "");
-      mediaCell.append(element("strong", "row-title", row.kind === "video" ? "影片" : "圖片"));
-      mediaCell.append(element("span", "row-subline", String(row.preset_id || row.model || "—")));
-      tr.append(mediaCell);
-
-      const stateCell = tableCell("狀態", "");
-      stateCell.append(element("span", statusClass(row.status), statusLabel(row.status)));
-      const detail = jobMessage(row);
-      if (detail) stateCell.append(element("span", "row-subline", detail));
-      tr.append(stateCell);
-
-      tr.append(tableCell("建立時間", timeLabel(row.created_at), "time"));
-
-      const resultCell = tableCell("結果", "");
-      await appendResult(resultCell, row, verifiedArtifact(row), context);
+    for (const row of rows.slice(0, 12)) {
+      const card = await renderJobCard(row, context);
       if (!isCurrentReadiness(context)) return false;
-      tr.append(resultCell);
-
-      const actionCell = tableCell("操作", "", "row-action");
-      if (["queued", "running", "reconciling", "verifying"].includes(row.status)) {
-        const button = element("button", "link-button", "取消");
-        button.type = "button";
-        button.addEventListener("click", () => {
-          button.disabled = true;
-          cancelJob(row.id);
-        });
-        actionCell.append(button);
-      } else {
-        actionCell.append(element("span", "muted", "—"));
-      }
-      tr.append(actionCell);
-      fragment.append(tr);
+      if (card) fragment.append(card);
     }
     if (!isCurrentReadiness(context)) return false;
-    clearNode(jobsBody);
-    jobsBody.append(fragment);
+    clearNode(jobsGrid);
+    jobsGrid.append(fragment);
     queuedCount.textContent = String(queued);
     runningCount.textContent = String(active);
     activeJobCount.textContent = String(queued + active);
@@ -300,7 +308,7 @@
     if (!state.client || !state.session || !state.readinessAuthorized) return false;
     const result = await state.client
       .from("comfy_jobs")
-      .select("id,kind,status,model,preset_id,preset_version,created_at,comfy_artifacts(id,storage_path,mime_type,verification_state,width,height,duration_seconds)")
+      .select("id,kind,status,model,preset_id,preset_version,created_at,prompt,comfy_artifacts(id,storage_path,mime_type,verification_state,width,height,duration_seconds)")
       .order("created_at", { ascending: false })
       .limit(50);
     if (!isCurrentReadiness(context)) return false;
@@ -334,14 +342,15 @@
   const renderPresetFacts = (preset) => {
     clearNode(presetFacts);
     if (!preset) {
-      presetFacts.append(element("span", "muted", "未有已放行 preset。"));
+      presetFacts.append(element("span", "fact", "呢個模式未有已放行模型"));
       return;
     }
     const schema = preset.params_schema || {};
     const facts = [
       preset.media_kind === "video" ? "影片" : "圖片",
       "版本 " + preset.version,
-      "授權類別 " + preset.license_class,
+      "授權 " + preset.license_class,
+      Number(preset.max_input_assets) > 0 ? "接受輸入媒體" : "暫時只收文字",
     ];
     if (schema.output_frames && schema.fps) {
       facts.push(String(schema.output_frames.default) + " frames / " + String(schema.fps.default) + "fps");
@@ -349,56 +358,76 @@
     for (const fact of facts) presetFacts.append(element("span", "fact", fact));
   };
 
+  const presetsForMode = () => {
+    if (state.mode === "video") return state.enabledPresets.filter((preset) => preset.media_kind === "video");
+    if (state.mode === "edit") return state.enabledPresets.filter((preset) => Number(preset.max_input_assets) > 0);
+    return state.enabledPresets.filter((preset) => preset.media_kind === "image");
+  };
+
   const syncPresetControls = () => {
-    const preset = state.enabledPresets.find((item) => item.preset_id === presetSelect.value) || null;
-    if (!preset) {
+    const modePresets = presetsForMode();
+    clearNode(presetSelect);
+    if (modePresets.length === 0) {
+      const option = element("option", "", "未有已放行模型");
+      option.value = "";
+      presetSelect.append(option);
+      presetSelect.disabled = true;
       submitButton.disabled = true;
       promptInput.disabled = true;
       widthInput.disabled = true;
       heightInput.disabled = true;
       seedInput.disabled = true;
+      promptCount.textContent = "0 / " + promptInput.maxLength;
       renderPresetFacts(null);
+      if (state.mode === "video") {
+        setNote(formNote, "影片模型仲未放行（先前 Wan 影片未通過實際畫面驗證，保持鎖住）。文字生成影片一放行就會喺呢度出現。", false);
+      } else if (state.mode === "edit") {
+        setNote(formNote, state.uploadedAsset
+          ? "媒體已預覽（hash 已核對）。要等接受輸入媒體嘅編輯模型放行，先可以真正送出；依家唔會假裝已提交。"
+          : "上載相片或影片做本地預覽；編輯模型一放行就可以直接用。", false);
+      } else {
+        setNote(formNote, "", false);
+      }
       return;
     }
-    const schema = preset.params_schema || {};
+    presetSelect.disabled = false;
     promptInput.disabled = false;
+    for (const preset of modePresets) {
+      const option = element("option", "", preset.preset_id + " · " + preset.version);
+      option.value = preset.preset_id;
+      presetSelect.append(option);
+    }
+    const preset = modePresets.find((item) => item.preset_id === presetSelect.value) || modePresets[0];
+    presetSelect.value = preset.preset_id;
+    const schema = preset.params_schema || {};
     promptInput.maxLength = Number(schemaValue(schema.prompt, "max_length", 4000));
     configureNumber(widthInput, schema.width);
     configureNumber(heightInput, schema.height);
     configureNumber(seedInput, schema.seed);
     submitButton.disabled = state.pendingRecoveryBlocked;
     renderPresetFacts(preset);
+    updatePromptCount();
+  };
+
+  const updatePromptCount = () => {
+    promptCount.textContent = String(promptInput.value.length) + " / " + String(promptInput.maxLength);
   };
 
   const renderPresetOptions = () => {
-    clearNode(presetSelect);
+    syncPresetControls();
+    newJobButton.disabled = state.enabledPresets.length === 0;
     if (state.enabledPresets.length === 0) {
-      const option = element("option", "", "未有已放行 preset");
-      option.value = "";
-      presetSelect.append(option);
-      presetSelect.disabled = true;
-      submitButton.disabled = true;
-      newJobButton.disabled = true;
-      readinessNote.textContent = "A100 smoke test 未完成；生成入口已鎖住，唔會送出未驗證 workflow。";
+      readinessNote.textContent = "未有任何放行 preset；生成入口保持鎖住，唔會送出未驗證 workflow。";
       releasedPresetCount.textContent = "0";
-      syncPresetControls();
       return;
-    }
-    presetSelect.disabled = false;
-    newJobButton.disabled = false;
-    for (const preset of state.enabledPresets) {
-      const option = element("option", "", preset.preset_id + " · " + preset.version);
-      option.value = preset.preset_id;
-      presetSelect.append(option);
     }
     readinessNote.textContent = "只會提交資料庫已放行、帶完整 provenance 嘅 preset。";
     releasedPresetCount.textContent = String(state.enabledPresets.length);
-    syncPresetControls();
   };
 
   const showReadinessChecking = () => {
-    authCard.hidden = true;
-    composeCard.hidden = true;
+    authView.hidden = true;
+    createView.hidden = false;
     signOutButton.hidden = false;
     newJobButton.disabled = true;
     setStatus("檢查授權", "neutral");
@@ -420,8 +449,8 @@
     presetSelect.disabled = true;
     submitButton.disabled = true;
     newJobButton.disabled = true;
-    authCard.hidden = true;
-    composeCard.hidden = true;
+    authView.hidden = true;
+    createView.hidden = false;
     signOutButton.hidden = false;
     setStatus("已登入 · 鎖住", "failed");
     headlineNote.textContent = message;
@@ -555,7 +584,7 @@
   };
 
   const currentRequest = () => {
-    const preset = state.enabledPresets.find((item) => item.preset_id === presetSelect.value);
+    const preset = presetsForMode().find((item) => item.preset_id === presetSelect.value);
     if (!preset) return null;
     const params = {
       prompt: promptInput.value.trim(),
@@ -585,12 +614,19 @@
       blockPendingRecovery("上次 request 對應嘅 preset 已唔可用；原紀錄已保留，新提交保持鎖住。");
       return;
     }
+    const preset = state.enabledPresets.find((item) => item.preset_id === request.p_preset_id);
+    if (preset) {
+      state.mode = preset.media_kind === "video" ? "video" : (Number(preset.max_input_assets) > 0 ? "edit" : "image");
+      syncModeUi();
+    }
+    syncPresetControls();
     presetSelect.value = request.p_preset_id;
     syncPresetControls();
     promptInput.value = String(request.p_params.prompt ?? "");
     widthInput.value = String(request.p_params.width ?? widthInput.value);
     heightInput.value = String(request.p_params.height ?? heightInput.value);
     seedInput.value = String(request.p_params.seed ?? seedInput.value);
+    updatePromptCount();
     setNote(formNote, "搵到上次未確認嘅 request；相同設定會沿用同一 idempotency key。", false);
   };
 
@@ -605,6 +641,7 @@
     widthInput.value = draft.width;
     heightInput.value = draft.height;
     seedInput.value = draft.seed;
+    updatePromptCount();
   };
 
   const captureRefreshDraft = () => {
@@ -619,13 +656,13 @@
   };
 
   const clearJobView = () => {
-    jobsBody.querySelectorAll("video, audio").forEach((media) => {
+    jobsGrid.querySelectorAll("video, audio").forEach((media) => {
       media.pause();
       media.removeAttribute("src");
       media.load();
     });
-    jobsBody.querySelectorAll("img").forEach((image) => image.removeAttribute("src"));
-    clearNode(jobsBody);
+    jobsGrid.querySelectorAll("img").forEach((image) => image.removeAttribute("src"));
+    clearNode(jobsGrid);
     queuedCount.textContent = "—";
     runningCount.textContent = "—";
   };
@@ -647,8 +684,8 @@
 
   const showSignedOut = () => {
     resetSessionData();
-    authCard.hidden = false;
-    composeCard.hidden = true;
+    authView.hidden = false;
+    createView.hidden = true;
     signOutButton.hidden = true;
     newJobButton.disabled = true;
     setStatus("未登入", "neutral");
@@ -660,8 +697,8 @@
 
   const setSignedInView = () => {
     if (!state.readinessAuthorized) return;
-    authCard.hidden = true;
-    composeCard.hidden = false;
+    authView.hidden = true;
+    createView.hidden = false;
     signOutButton.hidden = false;
     newJobButton.disabled = state.enabledPresets.length === 0;
     setStatus("已登入", "connected");
@@ -695,7 +732,6 @@
     newJobButton.disabled = true;
   };
 
-
   const handleSession = async (nextSession, authGeneration) => {
     if (authGeneration !== state.authGeneration) return;
     const previousOwner = sessionOwner();
@@ -717,6 +753,115 @@
     else showSignedOut();
   };
 
+  /* ============ upload (local preview + hash; no fake submission) ============ */
+
+  const fileKind = (file) => {
+    if (file.type.startsWith("image/")) return "image";
+    if (file.type.startsWith("video/")) return "video";
+    return null;
+  };
+
+  const sha256Hex = async (buffer) => {
+    const digest = await crypto.subtle.digest("SHA-256", buffer);
+    return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  };
+
+  const renderUploadedAsset = async (file) => {
+    const kind = fileKind(file);
+    if (!kind) {
+      setNote(uploadNote, "只支援圖片（PNG/JPEG/WebP）同 MP4 影片。", true);
+      return;
+    }
+    if (file.size > 64 * 1024 * 1024) {
+      setNote(uploadNote, "檔案太大（上限 64MB），避免阻塞上載頻寬。", true);
+      return;
+    }
+    const buffer = await file.arrayBuffer();
+    const hash = await sha256Hex(buffer);
+    const url = URL.createObjectURL(file);
+    state.uploadedAsset = { file, kind, hash, url, size: file.size };
+    clearNode(uploadPreview);
+    const box = element("div", "media-box");
+    const media = document.createElement(kind === "video" ? "video" : "img");
+    if (kind === "video") { media.controls = true; media.muted = true; }
+    media.src = url;
+    box.append(media);
+    const meta = element("div", "upload-meta");
+    meta.append(element("b", "", file.name));
+    meta.append(element("span", "", (kind === "video" ? "影片" : "圖片") + " · " + (file.size / 1024 / 1024).toFixed(2) + " MB"));
+    const hashLine = element("span", "", "");
+    hashLine.append(document.createTextNode("sha256 "));
+    const code = document.createElement("code");
+    code.textContent = hash.slice(0, 32) + "…";
+    hashLine.append(code);
+    meta.append(hashLine);
+    const clear = element("button", "ghost", "移除");
+    clear.type = "button";
+    clear.addEventListener("click", () => {
+      URL.revokeObjectURL(url);
+      state.uploadedAsset = null;
+      uploadPreview.hidden = true;
+      clearNode(uploadPreview);
+      setNote(uploadNote, "揀到嘅媒體會做本地預覽同 hash 核對；目前放行嘅模型未接受輸入媒體時會如實標明。", false);
+      syncPresetControls();
+    });
+    meta.append(clear);
+    uploadPreview.hidden = false;
+    uploadPreview.append(box, meta);
+    syncPresetControls();
+  };
+
+  uploadDrop.addEventListener("click", () => uploadInput.click());
+  uploadDrop.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      uploadInput.click();
+    }
+  });
+  uploadInput.addEventListener("change", () => {
+    if (uploadInput.files && uploadInput.files[0]) renderUploadedAsset(uploadInput.files[0]);
+    uploadInput.value = "";
+  });
+  ["dragenter", "dragover"].forEach((name) => {
+    uploadDrop.addEventListener(name, (event) => {
+      event.preventDefault();
+      uploadDrop.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach((name) => {
+    uploadDrop.addEventListener(name, (event) => {
+      event.preventDefault();
+      uploadDrop.classList.remove("dragover");
+    });
+  });
+  uploadDrop.addEventListener("drop", (event) => {
+    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) renderUploadedAsset(file);
+  });
+
+  /* ============ mode tabs ============ */
+
+  const syncModeUi = () => {
+    document.querySelectorAll(".mode").forEach((tab) => {
+      const active = tab.dataset.mode === state.mode;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    uploadZone.hidden = state.mode !== "edit";
+    const titles = { image: "創作 · 圖片", video: "創作 · 影片", edit: "編輯 · 上載媒體" };
+    byId("stage-title").textContent = titles[state.mode] || "創作";
+    syncPresetControls();
+  };
+
+  document.querySelectorAll(".mode").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      state.mode = tab.dataset.mode;
+      syncModeUi();
+    });
+  });
+
+  /* ============ auth ============ */
+
   const init = async () => {
     if (
       config.authRedirectUrl !== canonicalAuthRedirectUrl
@@ -726,7 +871,7 @@
     ) {
       authSubmit.disabled = true;
       setStatus("未設定", "failed");
-      headlineNote.textContent = "網站設定未通過 HTTPS redirect檢查；登入同生成保持鎖住。";
+      headlineNote.textContent = "網站設定未通過 HTTPS redirect 檢查；登入同生成保持鎖住。";
       setNote(authNote, "需要先提供 publishable key；service role 絕對唔會放入瀏覽器。", true);
       return;
     }
@@ -757,7 +902,21 @@
     event.preventDefault();
     if (!state.client) return;
     const email = byId("email").value.trim();
+    const password = byId("password").value;
     authSubmit.disabled = true;
+    if (password) {
+      setNote(authNote, "正在登入…", false);
+      const result = await state.client.auth.signInWithPassword({ email, password });
+      authSubmit.disabled = false;
+      if (result.error) {
+        setNote(authNote, result.error.message && result.error.message.includes("Invalid login")
+          ? "Email 或密碼唔啱。"
+          : safeError("auth", result.error), true);
+        return;
+      }
+      setNote(authNote, "", false);
+      return;
+    }
     setNote(authNote, "正送出登入連結…", false);
     const result = await state.client.auth.signInWithOtp({
       email,
@@ -774,6 +933,24 @@
     setNote(authNote, "請喺電郵開啟登入連結；只有既有帳戶先會成功。", false);
   });
 
+  authLinkButton.addEventListener("click", () => {
+    const passwordField = byId("password");
+    if (passwordField.hidden) {
+      passwordField.parentElement.hidden = false;
+      passwordField.hidden = false;
+      authSubmit.textContent = "登入";
+      authLinkButton.textContent = "改用郵件連結";
+    } else {
+      passwordField.value = "";
+      passwordField.hidden = true;
+      passwordField.parentElement.hidden = true;
+      authSubmit.textContent = "傳送登入連結";
+      authLinkButton.textContent = "改用密碼登入";
+    }
+  });
+
+  /* ============ enqueue ============ */
+
   jobForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!state.client || !state.session || !state.readinessAuthorized) {
@@ -781,9 +958,13 @@
       return;
     }
     const request = currentRequest();
-    if (!request || state.enabledPresets.length === 0) {
+    if (!request || presetsForMode().length === 0) {
       submitButton.disabled = true;
-      setNote(formNote, "A100 smoke test 未完成，未有 preset 可以提交。", true);
+      setNote(formNote, "呢個模式未有放行模型，唔會送出。", true);
+      return;
+    }
+    if (state.mode === "edit" && !state.uploadedAsset) {
+      setNote(formNote, "編輯模式要先上載相片或影片。", true);
       return;
     }
     const context = sessionContext();
@@ -824,10 +1005,12 @@
     setNote(formNote, "已記錄 job " + shortId(row && row.job_id) + "；開始與否以 queue 狀態為準。", false);
     jobForm.reset();
     syncPresetControls();
+    if (state.uploadedAsset && state.mode !== "edit") { /* keep upload only in edit mode */ }
     await loadJobs(context);
   });
 
   presetSelect.addEventListener("change", syncPresetControls);
+  promptInput.addEventListener("input", updatePromptCount);
   signOutButton.addEventListener("click", async () => {
     if (!state.client) return;
     signOutButton.disabled = true;
@@ -837,13 +1020,13 @@
   });
   refreshButton.addEventListener("click", () => loadJobs());
   newJobButton.addEventListener("click", () => {
-    composeCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    createView.scrollIntoView({ behavior: "smooth", block: "start" });
   });
-  document.querySelectorAll(".nav-item").forEach((button) => {
+  document.querySelectorAll(".rail-item").forEach((button) => {
     button.addEventListener("click", () => {
-      document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
+      document.querySelectorAll(".rail-item").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
-      const target = button.dataset.view === "queue" ? byId("queue-card") : composeCard;
+      const target = button.dataset.view === "gallery" ? byId("queue-card") : byId("create-view");
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
@@ -854,6 +1037,7 @@
     if (state.session && state.readinessAuthorized) loadJobs();
   }, 15000);
 
+  syncModeUi();
   showSignedOut();
   init();
 })();
