@@ -4,154 +4,185 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Yinops Render</title>
-  <meta name="color-scheme" content="dark">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./app.css">
 </head>
 <body>
-  <div class="studio">
-    <aside class="rail" aria-label="Yinops Render navigation">
-      <a class="brand" href="#create">
-        <span class="brand-dot" aria-hidden="true"></span>
-        <span class="brand-name">Yinops<em>Render</em></span>
-      </a>
-      <nav class="rail-nav" aria-label="Studio">
-        <button class="rail-item active" type="button" data-view="create">
-          <span class="rail-icon" aria-hidden="true">✦</span><span>創作</span>
-        </button>
-        <button class="rail-item" type="button" data-view="gallery">
-          <span class="rail-icon" aria-hidden="true">▤</span><span>作品</span>
-        </button>
+  <div class="frame">
+    <aside class="sidebar" aria-label="Yinops Render navigation">
+      <a class="wordmark" href="#app"><span class="mark" aria-hidden="true">Y</span><span>Yinops Render</span></a>
+      <nav aria-label="Console">
+        <button class="nav-item active" type="button" data-view="compose">建立作品</button>
+        <button class="nav-item" type="button" data-view="queue">進度與作品</button>
       </nav>
-      <div class="rail-foot">
-        <span id="connection" class="pill pill-neutral">檢查中</span>
-        <button id="sign-out" class="ghost" type="button" hidden>登出</button>
+      <div class="sidebar-foot">
+        <p>只供你使用</p>
       </div>
     </aside>
 
-    <main class="stage">
-      <!-- ============ AUTH ============ -->
-      <section id="auth-view" class="auth-view">
-        <div class="auth-panel">
-          <h1>歡迎返嚟</h1>
-          <p class="auth-sub">私人生成工作台。用已存在嘅帳戶登入；呢個頁面唔會建立新帳戶。</p>
-          <form id="auth-form" class="auth-form" autocomplete="on">
-            <label class="field">
-              <span>Email</span>
-              <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com">
-            </label>
-            <label class="field">
-              <span>密碼</span>
-              <input id="password" name="password" type="password" autocomplete="current-password" placeholder="帳戶密碼">
-            </label>
-            <div class="auth-row">
-              <button id="auth-submit" class="cta" type="submit">登入</button>
-              <button id="auth-link" class="ghost" type="button">改用郵件連結</button>
-            </div>
-            <p id="auth-note" class="note" role="status"></p>
-          </form>
+    <main class="canvas" id="app">
+      <header class="title-row">
+        <div>
+          <p class="eyebrow">你嘅 AI 工作台</p>
+          <h1>製作圖片同影片</h1>
+          <p id="headline-note">載入登入狀態。</p>
+        </div>
+        <div class="header-actions">
+          <button id="sign-out" class="link-button" type="button" hidden>登出</button>
+          <span id="connection" class="status-pill neutral">檢查中</span>
+          <button id="new-job" class="primary" type="button" disabled>建立作品</button>
+        </div>
+      </header>
+
+      <section id="auth-card" class="card auth-card" aria-labelledby="auth-title">
+        <div>
+          <p class="section-kicker">私人登入</p>
+          <h2 id="auth-title">登入後查看作品同進度</h2>
+          <p class="note">請用已登記嘅電郵登入；暫不接受新帳戶登記。</p>
+        </div>
+        <form id="auth-form">
+          <div>
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" required>
+          </div>
+          <button id="auth-submit" class="primary" type="submit">傳送登入連結</button>
+        </form>
+        <p id="auth-note" class="note" aria-live="polite"></p>
+      </section>
+
+      <section class="readiness" aria-labelledby="readiness-title">
+        <div class="readiness-copy">
+          <p class="section-kicker">製作狀態</p>
+          <h2 id="readiness-title">而家可以做啲乜</h2>
+          <p id="readiness-note">登入後會顯示已開放嘅模型。</p>
+        </div>
+        <dl class="readiness-grid">
+          <div><dt>實際 GPU</dt><dd>未知</dd></div>
+          <div><dt>已開放模型</dt><dd id="released-preset-count">—</dd></div>
+          <div><dt>等候／處理中</dt><dd id="active-job-count">—</dd></div>
+          <div><dt>可查看作品</dt><dd id="latest-result">—</dd></div>
+        </dl>
+        <div class="resource-note" aria-labelledby="resource-status-title">
+          <div class="section-head">
+            <div><h3 id="resource-status-title">Colab 帳戶與資源</h3><p id="account-note" role="status">登入後先讀取帳戶資料。</p></div>
+            <button id="refresh-accounts" class="secondary" type="button" disabled>更新帳戶狀態</button>
+          </div>
+          <div id="account-controls" hidden>
+            <label for="account-selector">查看／選擇帳戶</label>
+            <select id="account-selector"><option value="">暫不指定帳戶</option></select>
+            <label for="gpu-selector">GPU 偏好</label>
+            <select id="gpu-selector" disabled><option value="">未選擇 GPU</option><option value="A100">A100</option><option value="T4">T4</option></select>
+            <p id="gpu-note" class="note" role="status">揀帳戶後可選 GPU 偏好；呢個選擇唔代表已分配資源。</p>
+            <p id="account-selection-note" class="note">暫時只可查看帳戶資料，未能指定帳戶製作作品。</p>
+          </div>
+          <div id="account-cards" class="account-grid"></div>
+          <p class="note">有餘額唔代表一定分配到 GPU。資料過期會顯示「未知」，按更新就可以再查。</p>
         </div>
       </section>
 
-      <!-- ============ CREATE ============ -->
-      <section id="create-view" class="create-view" hidden>
-        <header class="stage-head">
+      <section id="consent-card" class="card consent-card" hidden aria-labelledby="consent-title">
+        <div class="section-head">
+          <div><p class="section-kicker">連接第一個帳戶</p><h2 id="consent-title">連接 Google 帳戶</h2></div>
+          <button id="consent-refresh" class="secondary" type="button" disabled>核對連接狀態</button>
+        </div>
+        <p id="consent-account" class="consent-account"></p>
+        <p id="consent-stage" class="consent-stage">連接入口未準備好</p>
+        <p id="consent-status" class="note" role="status">連接功能暫未開放。</p>
+        <p id="consent-guidance" class="consent-guidance"></p>
+        <div id="consent-disclosure">
+          <p>呢一步只連接帳戶，唔會啟動 GPU。另一個帳戶會之後分開處理。</p>
+          <details id="consent-permissions" open>
+            <summary>Google 會要求以下六項權限</summary>
+            <ul>
+              <li>識別你嘅 Google 帳戶（OpenID）</li>
+              <li>讀取基本帳戶資料</li>
+              <li>讀取 Google 電郵地址</li>
+              <li>管理 Google Cloud 資料，包括改動同刪除</li>
+              <li>操作 Colab 運算資源</li>
+              <li>讀取、建立、改動同刪除此 app 使用嘅指定 Drive 檔案</li>
+            </ul>
+          </details>
+          <p>呢組權限唔係只讀登入。授權可喺你離線時繼續使用；憑證會保存到現有 Vault 私人資料夾，該資料夾由 iCloud 同步，唔係只留喺呢部 Mac。</p>
+          <label class="consent-ack"><input id="consent-ack" type="checkbox" disabled><span>我已了解以上權限同儲存位置。</span></label>
+        </div>
+        <div class="consent-actions">
+          <button id="wake-request" class="primary" type="button" hidden disabled>要求本機接駁</button>
+          <button id="wake-cancel" class="secondary" type="button" hidden disabled>取消呢次接駁要求</button>
+          <button id="consent-start" class="primary" type="button" disabled>準備 Google 授權</button>
+          <a id="consent-google" class="primary" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>前往 Google 授權</a>
+        </div>
+        <div class="consent-actions">
+          <button id="consent-pause" class="secondary" type="button" hidden>暫停此頁連接</button>
+          <button id="consent-resume" class="secondary" type="button" hidden>繼續核對原本連接</button>
+        </div>
+        <p id="consent-pause-note" class="note" hidden>暫停只會停止此頁核對，唔會取消後端要求或撤回 Google 授權。</p>
+        <form id="consent-return" hidden>
+          <label for="consent-response">Google 授權完成後，貼上地址欄嘅完整回程網址</label>
+          <p id="consent-return-help" class="note">唔好按 Google 嘅「Copy code」。網址含短期秘密，只貼喺呢度，唔好傳入對話。傳送前會喺瀏覽器加密。</p>
+          <input id="consent-response" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" required maxlength="8192" aria-describedby="consent-return-help">
+          <button id="consent-submit" class="primary" type="submit" disabled>安全確認連接</button>
+        </form>
+      </section>
+
+      <section id="compose-card" class="card compose" hidden aria-labelledby="compose-title">
+        <div class="section-head">
           <div>
-            <p class="eyebrow" id="headline-note">載入登入狀態。</p>
-            <h1 id="stage-title">創作</h1>
+            <p class="section-kicker">開始製作</p>
+            <h2 id="compose-title">你想做咩作品？</h2>
           </div>
-          <button id="new-job" class="cta" type="button" disabled>新增創作</button>
-        </header>
-
-        <!-- readiness strip -->
-        <div id="readiness-strip" class="strip" hidden>
-          <span class="strip-item"><b id="released-preset-count">—</b> 已放行模型</span>
-          <span class="strip-item"><b id="active-job-count">—</b> 進行中</span>
-          <span class="strip-item"><b id="latest-result">—</b> 已驗證結果</span>
-          <span id="readiness-note" class="strip-note"></span>
+          <p class="section-note">揀模型，再描述你想要嘅畫面。</p>
         </div>
-
-        <div class="composer-wrap">
-          <!-- mode tabs -->
-          <div class="modes" role="tablist" aria-label="創作模式">
-            <button class="mode active" type="button" data-mode="image" role="tab" aria-selected="true">
-              <span class="mode-icon" aria-hidden="true">▣</span>
-              <span class="mode-text"><b>圖片</b><small>Text → Image</small></span>
-            </button>
-            <button class="mode" type="button" data-mode="video" role="tab" aria-selected="false">
-              <span class="mode-icon" aria-hidden="true">▶</span>
-              <span class="mode-text"><b>影片</b><small>Text → Video</small></span>
-            </button>
-            <button class="mode" type="button" data-mode="edit" role="tab" aria-selected="false">
-              <span class="mode-icon" aria-hidden="true">✎</span>
-              <span class="mode-text"><b>編輯</b><small>上載相片／影片</small></span>
-            </button>
+        <form id="job-form">
+          <div class="field-row">
+            <label for="preset">模型</label>
+            <select id="preset" name="preset" disabled>
+              <option value="">暫未有已開放模型</option>
+            </select>
           </div>
-
-          <!-- upload zone (edit mode) -->
-          <div id="upload-zone" class="upload" hidden>
-            <div id="upload-drop" class="upload-drop" tabindex="0" role="button" aria-label="上載相片或影片">
-              <span class="upload-art" aria-hidden="true">⇪</span>
-              <b>Drop 你嘅相片或影片</b>
-              <small>拖放檔案，或者撳一下揀選 · 圖片 PNG/JPEG/WebP · 影片 MP4</small>
-              <input id="upload-input" type="file" accept="image/png,image/jpeg,image/webp,video/mp4" hidden>
-            </div>
-            <div id="upload-preview" class="upload-preview" hidden></div>
-            <p id="upload-note" class="note">揀到嘅媒體會做本地預覽同 hash 核對；目前放行嘅模型未接受輸入媒體時會如實標明。</p>
+          <div id="preset-facts" class="preset-facts" aria-live="polite">
+            <span class="muted">暫未有已開放模型。</span>
           </div>
+          <div class="field-row">
+            <label for="prompt">畫面描述</label>
+            <textarea id="prompt" name="prompt" rows="5" required maxlength="4000" disabled placeholder="描述畫面、動作、鏡頭同光線"></textarea>
+          </div>
+          <div class="metric-grid">
+            <div><label for="width">闊度（像素）</label><input id="width" name="width" type="number" disabled></div>
+            <div><label for="height">高度（像素）</label><input id="height" name="height" type="number" disabled></div>
+            <div><label for="seed">變化編號（相同編號方便重現）</label><input id="seed" name="seed" type="number" disabled></div>
+          </div>
+          <button id="submit-job" class="primary" type="submit" disabled>加入製作清單</button>
+        </form>
+        <p id="form-note" class="note" aria-live="polite"></p>
+      </section>
 
-          <!-- composer -->
-          <form id="job-form" class="composer">
-            <div class="prompt-wrap">
-              <textarea id="prompt" rows="4" placeholder="形容你想生成嘅畫面…&#10;例如：黃昏維港，長椅上放住一排紅葉，電影感光線，淺景深" required disabled></textarea>
-              <div class="prompt-meta">
-                <span id="prompt-count">0 / 4000</span>
-              </div>
-            </div>
-
-            <div class="controls">
-              <label class="control">
-                <span>模型</span>
-                <select id="preset" disabled></select>
-              </label>
-              <label class="control control-narrow">
-                <span>闊</span>
-                <input id="width" type="number" disabled>
-              </label>
-              <label class="control control-narrow">
-                <span>高</span>
-                <input id="height" type="number" disabled>
-              </label>
-              <label class="control control-narrow">
-                <span>Seed</span>
-                <input id="seed" type="number" disabled>
-              </label>
-              <button id="submit-job" class="cta cta-wide" type="submit" disabled>生成</button>
-            </div>
-            <div id="preset-facts" class="facts"></div>
-            <p id="form-note" class="note" role="status"></p>
-          </form>
+      <section id="queue-card" class="card queue-card" aria-labelledby="queue-title">
+        <div class="section-head">
+          <div>
+            <p class="section-kicker">作品記錄</p>
+            <h2 id="queue-title">進度與作品</h2>
+          </div>
+          <div class="queue-tools">
+            <p><span id="queued-count">0</span> 排隊 · <span id="running-count">0</span> 處理中</p>
+            <button id="refresh-jobs" class="secondary" type="button">重新整理</button>
+          </div>
         </div>
-
-        <!-- ============ GALLERY ============ -->
-        <section id="queue-card" class="gallery" hidden>
-          <header class="gallery-head">
-            <h2>作品同進度</h2>
-            <div class="gallery-stats">
-              <span class="pill pill-neutral"><b id="queued-count">—</b> 排隊</span>
-              <span class="pill pill-neutral"><b id="running-count">—</b> 生成中</span>
-              <button id="refresh-jobs" class="ghost" type="button">重新整理</button>
-            </div>
-          </header>
-          <div id="jobs" class="gallery-grid"></div>
-        </section>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>編號</th><th>模型</th><th>狀態</th><th>建立時間</th><th>結果</th><th>操作</th></tr>
+            </thead>
+            <tbody id="jobs">
+              <tr><td colspan="6"><div class="empty">登入後顯示你嘅作品同進度。</div></td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
   </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js" integrity="sha384-UagCvVPT5XXA0Hx+nJYUAGBFseHT9zBgpJMSebsAxl9lciTwbT+39j5VfRjdP5Tp" crossorigin="anonymous"></script>
   <script src="./config.js"></script>
   <script src="./app.js"></script>
 </body>
